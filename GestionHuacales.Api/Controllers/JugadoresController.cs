@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using GestionHuacales.Api.DAL;
 using GestionHuacales.Api.Models;
+using GestionHuacales.Api.DTO;
+using GestionHuacales.Api.Enums;
 
 namespace GestionHuacales.Api.Controllers
 {
@@ -23,36 +25,108 @@ namespace GestionHuacales.Api.Controllers
 
         // GET: api/Jugadores
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Jugadores>>> GetJugadores()
+        public async Task<ActionResult<IEnumerable<JugadoresListDto>>> GetJugadores()
         {
-            return await _context.Jugadores.ToListAsync();
+            var jugadores = await _context.Jugadores
+                .Select(j => new JugadoresListDto
+                {
+                    JugadorId = j.JugadorId,
+                    Nombres = j.Nombres,
+                    Email = j.Email,
+                    Victorias = j.Victorias,
+                    Derrotas = j.Derrotas,
+                    Empates = j.Empates
+                })
+                .ToListAsync();
+
+            return Ok(jugadores);
         }
 
         // GET: api/Jugadores/5
         [HttpGet("{id}")]
-        public async Task<ActionResult<Jugadores>> GetJugadores(int id)
+        public async Task<ActionResult<JugadoresResponseDto>> GetJugadores(int id)
         {
-            var jugadores = await _context.Jugadores.FindAsync(id);
+            var jugador = await _context.Jugadores
+                .Where(j => j.JugadorId == id)
+                .Select(j => new JugadoresResponseDto
+                {
+                    JugadorId = j.JugadorId,
+                    Nombres = j.Nombres,
+                    Email = j.Email,
+                    FechaCreacion = j.FechaCreacion,
+                    Victorias = j.Victorias,
+                    Derrotas = j.Derrotas,
+                    Empates = j.Empates
+                })
+                .FirstOrDefaultAsync();
 
-            if (jugadores == null)
+            if (jugador == null)
             {
-                return NotFound();
+                return NotFound($"No se encontró el jugador con ID {id}");
             }
 
-            return jugadores;
+            return Ok(jugador);
+        }
+
+        // GET: api/Jugadores/5/stats
+        [HttpGet("{id}/stats")]
+        public async Task<ActionResult<JugadoresStatsDto>> GetJugadorStats(int id)
+        {
+            var jugador = await _context.Jugadores
+                .Where(j => j.JugadorId == id)
+                .Select(j => new JugadoresStatsDto
+                {
+                    JugadorId = j.JugadorId,
+                    Nombres = j.Nombres,
+                    Victorias = j.Victorias,
+                    Derrotas = j.Derrotas,
+                    Empates = j.Empates,
+                    FechaCreacion = j.FechaCreacion,
+                    FechaUltimaPartida = j.PartidasComoJugador1
+                        .Union(j.PartidasComoJugador2)
+                        .Where(p => p.FechaFin != null)
+                        .OrderByDescending(p => p.FechaFin)
+                        .Select(p => p.FechaFin)
+                        .FirstOrDefault()
+                })
+                .FirstOrDefaultAsync();
+
+            if (jugador == null)
+            {
+                return NotFound($"No se encontró el jugador con ID {id}");
+            }
+
+            return Ok(jugador);
         }
 
         // PUT: api/Jugadores/5
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPut("{id}")]
-        public async Task<IActionResult> PutJugadores(int id, Jugadores jugadores)
+        public async Task<IActionResult> PutJugadores(int id, JugadoresUpdateDto jugadorDto)
         {
-            if (id != jugadores.JugadorId)
+            if (!ModelState.IsValid)
             {
-                return BadRequest();
+                return BadRequest(ModelState);
             }
 
-            _context.Entry(jugadores).State = EntityState.Modified;
+            var jugadorExistente = await _context.Jugadores.FindAsync(id);
+            if (jugadorExistente == null)
+            {
+                return NotFound($"No se encontro el jugador con ID {id}");
+            }
+
+            var emailExiste = await _context.Jugadores
+                .AnyAsync(j => j.Email == jugadorDto.Email && j.JugadorId != id);
+
+            var nombreExiste = await _context.Jugadores
+                .AnyAsync(j => j.Nombres == jugadorDto.Nombres && j.JugadorId != id);
+
+            if (emailExiste)
+                return BadRequest("El email ya esta siendo utilizado por otro jugador");
+            if (nombreExiste)
+                return BadRequest("El nombre ya esta siendo utilizado por otro jugador");
+
+            jugadorExistente.Nombres = jugadorDto.Nombres;
+            jugadorExistente.Email = jugadorDto.Email;
 
             try
             {
@@ -62,7 +136,7 @@ namespace GestionHuacales.Api.Controllers
             {
                 if (!JugadoresExists(id))
                 {
-                    return NotFound();
+                    return NotFound($"El jugador con ID {id} no existe");
                 }
                 else
                 {
@@ -74,30 +148,101 @@ namespace GestionHuacales.Api.Controllers
         }
 
         // POST: api/Jugadores
-        // To protect from overposting attacks, see https://go.microsoft.com/fwlink/?linkid=2123754
         [HttpPost]
-        public async Task<ActionResult<Jugadores>> PostJugadores(Jugadores jugadores)
+        public async Task<ActionResult<JugadoresResponseDto>> PostJugadores(JugadoresCreateDto jugadorDto)
         {
-            _context.Jugadores.Add(jugadores);
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            var emailExiste = await _context.Jugadores
+                .AnyAsync(j => j.Email == jugadorDto.Email);
+
+            var nombreExiste = await _context.Jugadores
+                .AnyAsync(j => j.Nombres == jugadorDto.Nombres);
+
+            if (emailExiste)
+            {
+                return BadRequest("El email ya esta siendo utilizado por otro jugador");
+            }
+            if (nombreExiste)
+            {
+                return BadRequest("El nombre ya esta siendo utilizado por otro jugador");
+            }
+
+            var jugador = new Jugadores
+            {
+                Nombres = jugadorDto.Nombres,
+                Email = jugadorDto.Email,
+                FechaCreacion = DateTime.UtcNow,
+                Victorias = 0,
+                Derrotas = 0,
+                Empates = 0
+            };
+
+            _context.Jugadores.Add(jugador);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction("GetJugadores", new { id = jugadores.JugadorId }, jugadores);
+            var response = new JugadoresResponseDto
+            {
+                JugadorId = jugador.JugadorId,
+                Nombres = jugador.Nombres,
+                Email = jugador.Email,
+                FechaCreacion = jugador.FechaCreacion,
+                Victorias = jugador.Victorias,
+                Derrotas = jugador.Derrotas,
+                Empates = jugador.Empates
+            };
+
+            return CreatedAtAction("GetJugadores", new { id = jugador.JugadorId }, response);
         }
 
         // DELETE: api/Jugadores/5
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteJugadores(int id)
         {
-            var jugadores = await _context.Jugadores.FindAsync(id);
-            if (jugadores == null)
+            var jugador = await _context.Jugadores.FindAsync(id);
+            if (jugador == null)
             {
-                return NotFound();
+                return NotFound($"No se encontró el jugador con ID {id}");
             }
 
-            _context.Jugadores.Remove(jugadores);
+            var tienePartidasActivas = await _context.Partidas
+                .AnyAsync(p => (p.Jugador1Id == id || p.Jugador2Id == id) && p.EstadoPartida != EstadoPartida.Finalizada);
+
+            if (tienePartidasActivas)
+            {
+                return BadRequest("No se puede eliminar el jugador porque tiene partidas activas");
+            }
+
+            _context.Jugadores.Remove(jugador);
             await _context.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        // GET: api/Jugadores/ranking
+        [HttpGet("ranking")]
+        public async Task<ActionResult<IEnumerable<JugadoresListDto>>> GetRanking()
+        {
+            var ranking = await _context.Jugadores
+                .Where(j => j.Victorias + j.Derrotas + j.Empates > 0)
+                .OrderByDescending(j => (double)j.Victorias / (j.Victorias + j.Derrotas + j.Empates) * 100)
+                .ThenByDescending(j => j.Victorias)
+                .ThenBy(j => j.Nombres)
+                .Select(j => new JugadoresListDto
+                {
+                    JugadorId = j.JugadorId,
+                    Nombres = j.Nombres,
+                    Email = j.Email,
+                    Victorias = j.Victorias,
+                    Derrotas = j.Derrotas,
+                    Empates = j.Empates
+                })
+                .ToListAsync();
+
+            return Ok(ranking);
         }
 
         private bool JugadoresExists(int id)
