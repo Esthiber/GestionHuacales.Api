@@ -15,7 +15,9 @@ builder.Services.AddOpenApi();
 var ConStr = builder.Configuration.GetConnectionString("sqlite");
 
 builder.Services.AddDbContextFactory<Contexto>(o => o.UseSqlite(ConStr));
+builder.Services.AddScoped<Contexto>();
 builder.Services.AddScoped<EntradaHuacalesServices>();
+builder.Services.AddScoped<PartidasService>();
 
 var app = builder.Build();
 
