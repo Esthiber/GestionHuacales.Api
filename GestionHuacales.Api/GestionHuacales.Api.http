@@ -1,19 +1,31 @@
 @GestionHuacales.Api_HostAddress = https://localhost:7047
 
+
 ###
 
-POST https://gestionhuacalesapi.azurewebsites.net/api/entradahuacales
+POST {{GestionHuacales.Api_HostAddress}}/api/movimientos
 Content-Type: application/json
 
 {
-  "nombreCliente": "Enel",
-  "huacales": [
-    {
-      "idTipo": 1,
-      "cantidad": 1,
-      "precio": 100
-    }
-  ]
+  "partidaId": 1,
+  "jugador": "X",
+  "posicionFila": 2,
+  "posicionColumna": 0
 }
+###
+
+POST {{GestionHuacales.Api_HostAddress}}/api/movimientos
+Content-Type: application/json
+{
+  "partidaId": 1,
+  "jugador": "O",
+  "posicionFila": 2,
+  "posicionColumna": 1
+}
+
+###
+
+@partidaId=1
+GET {{GestionHuacales.Api_HostAddress}}/api/movimientos/{{partidaId}}
 
 ###
